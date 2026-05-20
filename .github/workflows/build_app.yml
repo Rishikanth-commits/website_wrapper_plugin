@@ -1,0 +1,104 @@
+name: Build Custom Website Wrapper
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App Name (e.g. My Web App)'
+        required: true
+        default: 'Website Wrapper'
+      target_url:
+        description: 'Target Website URL (e.g. https://example.com)'
+        required: true
+        default: 'https://flutter.dev'
+      primary_color:
+        description: 'Primary Color (Hex code, e.g. #FF5733 or #448AFF)'
+        required: true
+        default: '#448AFF'
+      bundle_id:
+        description: 'Bundle ID / Package Name (e.g. com.company.app)'
+        required: true
+        default: 'com.example.app'
+      logo_url:
+        description: 'Public URL to download Logo (Optional, PNG/JPEG format)'
+        required: false
+      enable_auth:
+        description: 'Enable Login/Signup (true/false)'
+        required: true
+        type: boolean
+        default: false
+      show_settings:
+        description: 'Show Settings Button in App (true/false)'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build Android App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Download Custom Logo
+        run: |
+          if [ -n "${{ github.event.inputs.logo_url }}" ]; then
+            echo "🖼️ Downloading logo from ${{ github.event.inputs.logo_url }}..."
+            curl -L -o custom_logo.png "${{ github.event.inputs.logo_url }}"
+            echo "logo_path=custom_logo.png" >> $GITHUB_ENV
+          else
+            echo "Using default logo."
+            echo "logo_path=" >> $GITHUB_ENV
+          fi
+
+      - name: Run Configuration Script
+        run: |
+          COLOR_HEX="${{ github.event.inputs.primary_color }}"
+          # Ensure color starts with #
+          if [[ ! $COLOR_HEX =~ ^# ]]; then
+            COLOR_HEX="#$COLOR_HEX"
+          fi
+          
+          ARGS="--url \"${{ github.event.inputs.target_url }}\" --name \"${{ github.event.inputs.app_name }}\" --color \"$COLOR_HEX\" --bundle-id \"${{ github.event.inputs.bundle_id }}\" --enable-auth \"${{ github.event.inputs.enable_auth }}\" --show-settings \"${{ github.event.inputs.show_settings }}\""
+          
+          if [ -n "$logo_path" ]; then
+            ARGS="$ARGS --logo \"$logo_path\""
+          fi
+          
+          echo "Running configurator with arguments: $ARGS"
+          eval dart run bin/configure.dart $ARGS
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Build App Bundle (AAB)
+        run: flutter build appbundle --release
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.app_name }} (APK)
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.app_name }} (AAB)
+          path: build/app/outputs/bundle/release/app-release.aab
