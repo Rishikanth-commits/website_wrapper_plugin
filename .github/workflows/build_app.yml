@@ -37,6 +37,8 @@ jobs:
   build:
     name: Build Android App
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Code
@@ -102,3 +104,25 @@ jobs:
         with:
           name: ${{ github.event.inputs.app_name }} (AAB)
           path: build/app/outputs/bundle/release/app-release.aab
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CLEAN_NAME=$(echo "${{ github.event.inputs.app_name }}" | tr -cd '[:alnum:]_-')
+          if [ -z "$CLEAN_NAME" ]; then
+            CLEAN_NAME="app"
+          fi
+          TAG_NAME="build-${CLEAN_NAME}-${{ github.run_number }}"
+          
+          echo "🚀 Creating GitHub Release with tag: $TAG_NAME"
+          
+          gh release create "$TAG_NAME" \
+            "build/app/outputs/flutter-apk/app-release.apk#${{ github.event.inputs.app_name }}.apk" \
+            "build/app/outputs/bundle/release/app-release.aab#${{ github.event.inputs.app_name }}.aab" \
+            --title "${{ github.event.inputs.app_name }} Build #${{ github.run_number }}" \
+            --notes "Custom Website Wrapper build for **${{ github.event.inputs.app_name }}**
+            - **URL:** ${{ github.event.inputs.target_url }}
+            - **Bundle ID:** ${{ github.event.inputs.bundle_id }}
+            - **Primary Color:** ${{ github.event.inputs.primary_color }}" \
+            --prerelease

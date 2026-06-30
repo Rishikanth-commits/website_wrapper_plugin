@@ -21,6 +21,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isWebViewVisible = false;
   String _appName = AppConfig.appName;
 
+  // Scroll tracking variables
+  bool _showAppBar = true;
+  double _lastScrollY = 0;
+
   @override
   void initState() {
     super.initState();
@@ -28,6 +32,9 @@ class _HomeScreenState extends State<HomeScreen> {
         WebViewController()
           ..setJavaScriptMode(JavaScriptMode.unrestricted)
           ..setBackgroundColor(const Color(0x00000000))
+          ..setOnScrollPositionChange((ScrollPositionChange change) {
+            _handleScroll(change.y);
+          })
           ..setNavigationDelegate(
             NavigationDelegate(
               onProgress: (int progress) {
@@ -60,6 +67,46 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _handleScroll(double y) {
+    if (!_isWebViewVisible) return;
+
+    // Always show AppBar at the top of the page
+    if (y <= 50) {
+      if (!_showAppBar) {
+        setState(() {
+          _showAppBar = true;
+        });
+      }
+      _lastScrollY = y;
+      return;
+    }
+
+    final double delta = y - _lastScrollY;
+
+    // Reset baseline if scrolling direction changed without triggering a state update yet
+    if ((delta > 0 && !_showAppBar) || (delta < 0 && _showAppBar)) {
+      _lastScrollY = y;
+    }
+
+    if (delta > 15) {
+      // Scroll Down -> Hide App Bar
+      if (_showAppBar) {
+        setState(() {
+          _showAppBar = false;
+        });
+      }
+      _lastScrollY = y;
+    } else if (delta < -15) {
+      // Scroll Up -> Show App Bar
+      if (!_showAppBar) {
+        setState(() {
+          _showAppBar = true;
+        });
+      }
+      _lastScrollY = y;
+    }
+  }
+
   void _loadCustomSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -77,9 +124,50 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _isWebViewVisible = true;
+      _showAppBar = true; // Show AppBar by default on new load
+      _lastScrollY = 0;
     });
 
     _controller.loadRequest(Uri.parse(formattedUrl));
+  }
+
+  Widget _buildAppBar(BuildContext context, ThemeData theme, Color primaryColor) {
+    return AppBar(
+      primary: false, // Manage status bar height padding manually/externally
+      elevation: 0,
+      title: Text(
+        _appName,
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: theme.colorScheme.onSurface,
+        ),
+      ),
+      actions: [
+        if (_isWebViewVisible)
+          IconButton(
+            icon: Icon(Icons.refresh, color: primaryColor),
+            onPressed: () => _controller.reload(),
+          ),
+        if (AppConfig.showSettingsButton)
+          IconButton(
+            icon: Icon(Icons.tune_rounded, color: primaryColor),
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SettingsScreen(),
+                ),
+              );
+              if (result == true) _loadCustomSettings();
+            },
+          ),
+        if (AppConfig.enableAuth)
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            onPressed: () => FirebaseAuth.instance.signOut(),
+          ),
+      ],
+    );
   }
 
   @override
@@ -116,129 +204,130 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(
-          elevation: 0,
-          title: Text(
-            _appName,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
-          actions: [
-            if (_isWebViewVisible)
-              IconButton(
-                icon: Icon(Icons.refresh, color: primaryColor),
-                onPressed: () => _controller.reload(),
-              ),
-            if (AppConfig.showSettingsButton)
-              IconButton(
-                icon: Icon(Icons.tune_rounded, color: primaryColor),
-                onPressed: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SettingsScreen(),
-                    ),
-                  );
-                  if (result == true) _loadCustomSettings();
-                },
-              ),
-            if (AppConfig.enableAuth)
-              IconButton(
-                icon: const Icon(Icons.logout, color: Colors.redAccent),
-                onPressed: () => FirebaseAuth.instance.signOut(),
-              ),
-          ],
-        ),
-        body: SafeArea(
-          child: Stack(
-            children: [
-              if (!_isWebViewVisible)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.phonelink_setup_rounded,
-                        size: 80,
-                        color: primaryColor,
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Convert Website to App',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      Container(
-                        decoration: BoxDecoration(
-                          color:
-                              isDark
-                                  ? Colors.grey[900]
-                                  : const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color:
-                                isDark
-                                    ? Colors.grey[800]!
-                                    : const Color(0xFFE2E8F0),
-                          ),
-                        ),
-                        child: TextField(
-                          controller: _urlController,
-                          style: TextStyle(color: theme.colorScheme.onSurface),
-                          decoration: InputDecoration(
-                            hintText: 'e.g. google.com',
-                            hintStyle: TextStyle(
-                              color: theme.colorScheme.onSurface.withOpacity(
-                                0.5,
-                              ),
-                            ),
-                            prefixIcon: Icon(
-                              Icons.language,
-                              color: primaryColor,
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 18,
-                            ),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                Icons.rocket_launch_rounded,
+        body: _isWebViewVisible
+            ? _buildWebViewLayout(context, theme, primaryColor)
+            : SafeArea(
+                child: Column(
+                  children: [
+                    _buildAppBar(context, theme, primaryColor),
+                    Expanded(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.phonelink_setup_rounded,
+                                size: 80,
                                 color: primaryColor,
                               ),
-                              onPressed: () => _loadUrl(_urlController.text),
-                            ),
+                              const SizedBox(height: 24),
+                              Text(
+                                'Convert Website to App',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.grey[900]
+                                      : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? Colors.grey[800]!
+                                        : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: TextField(
+                                  controller: _urlController,
+                                  style: TextStyle(color: theme.colorScheme.onSurface),
+                                  decoration: InputDecoration(
+                                    hintText: 'e.g. google.com',
+                                    hintStyle: TextStyle(
+                                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                                    ),
+                                    prefixIcon: Icon(
+                                      Icons.language,
+                                      color: primaryColor,
+                                    ),
+                                    border: InputBorder.none,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 18,
+                                    ),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        Icons.rocket_launch_rounded,
+                                        color: primaryColor,
+                                      ),
+                                      onPressed: () => _loadUrl(_urlController.text),
+                                    ),
+                                  ),
+                                  onSubmitted: _loadUrl,
+                                ),
+                              ),
+                            ],
                           ),
-                          onSubmitted: _loadUrl,
                         ),
                       ),
-                    ],
-                  ),
-                )
-              else
-                // Using WebViewWidget directly without the SingleChildScrollView wrapper
-                // fix the scroll issues as WebView handles its own scrolling.
-                WebViewWidget(controller: _controller),
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
 
-              if (_isWebViewVisible) ...[
-                if (_isLoading)
-                  LinearProgressIndicator(
-                    value: _progress,
-                    backgroundColor: Colors.transparent,
-                    color: primaryColor,
-                    minHeight: 3,
-                  ),
-              ],
-            ],
+  Widget _buildWebViewLayout(BuildContext context, ThemeData theme, Color primaryColor) {
+    final double statusBarHeight = MediaQuery.of(context).padding.top;
+    final double appBarHeight = kToolbarHeight + statusBarHeight;
+
+    return Stack(
+      children: [
+        // WebView occupying the screen, bounds change smoothly
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 200),
+          top: _showAppBar ? appBarHeight : 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: WebViewWidget(controller: _controller),
+        ),
+        
+        // Slideable Top Header/AppBar
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 200),
+          top: _showAppBar ? 0 : -appBarHeight,
+          left: 0,
+          right: 0,
+          height: appBarHeight,
+          child: Container(
+            color: theme.colorScheme.surface,
+            padding: EdgeInsets.only(top: statusBarHeight),
+            child: _buildAppBar(context, theme, primaryColor),
           ),
         ),
-      ),
+        
+        // Dynamic loading progress indicator
+        if (_isLoading)
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 200),
+            top: _showAppBar ? appBarHeight : 0,
+            left: 0,
+            right: 0,
+            child: LinearProgressIndicator(
+              value: _progress,
+              backgroundColor: Colors.transparent,
+              color: primaryColor,
+              minHeight: 3,
+            ),
+          ),
+      ],
     );
   }
 }
