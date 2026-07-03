@@ -128,6 +128,34 @@ class AppConfig {
     }
   }
 
+  // Direct file modification to ensure android/app/build.gradle.kts gets updated (Kotlin DSL support)
+  final buildGradleKtsFile = File('android/app/build.gradle.kts');
+  if (await buildGradleKtsFile.exists()) {
+    try {
+      String content = await buildGradleKtsFile.readAsString();
+      final regexAppId = RegExp(r'applicationId\s*=\s*"[^"]*"');
+      content = content.replaceAll(regexAppId, 'applicationId = "$bundleId"');
+      await buildGradleKtsFile.writeAsString(content);
+      print("✓ android/app/build.gradle.kts applicationId updated.");
+    } catch (e) {
+      print("⚠️ Failed to manually update build.gradle.kts: $e");
+    }
+  }
+
+  // Direct file modification to ensure iOS project pbxproj gets updated
+  final pbxprojFile = File('ios/Runner.xcodeproj/project.pbxproj');
+  if (await pbxprojFile.exists()) {
+    try {
+      String content = await pbxprojFile.readAsString();
+      final regexBundleId = RegExp(r'PRODUCT_BUNDLE_IDENTIFIER\s*=\s*[^;]*;');
+      content = content.replaceAll(regexBundleId, 'PRODUCT_BUNDLE_IDENTIFIER = $bundleId;');
+      await pbxprojFile.writeAsString(content);
+      print("✓ ios/Runner.xcodeproj/project.pbxproj bundle ID updated.");
+    } catch (e) {
+      print("⚠️ Failed to manually update project.pbxproj: $e");
+    }
+  }
+
   // 3. Rename Android/iOS bundle identifiers
   print("📦 Renaming package identifiers/bundle IDs to '$bundleId'...");
   final renameBundleResult = await Process.run('flutter', [
@@ -148,6 +176,38 @@ class AppConfig {
 
   // 4. Rename Android/iOS app names
   print("📱 Renaming app visible name to '$name'...");
+
+  // Direct file modification to ensure AndroidManifest.xml gets updated
+  final androidManifestFile = File('android/app/src/main/AndroidManifest.xml');
+  if (await androidManifestFile.exists()) {
+    try {
+      String content = await androidManifestFile.readAsString();
+      final regex = RegExp(r'android:label="[^"]*"');
+      content = content.replaceAll(regex, 'android:label="$name"');
+      await androidManifestFile.writeAsString(content);
+      print("✓ android/app/src/main/AndroidManifest.xml android:label updated.");
+    } catch (e) {
+      print("⚠️ Failed to manually update AndroidManifest.xml: $e");
+    }
+  }
+
+  // Direct file modification to ensure Info.plist gets updated
+  final infoPlistFile = File('ios/Runner/Info.plist');
+  if (await infoPlistFile.exists()) {
+    try {
+      String content = await infoPlistFile.readAsString();
+      final regexDisplayName = RegExp(r'<key>CFBundleDisplayName</key>\s*<string>[^<]*</string>');
+      final regexBundleName = RegExp(r'<key>CFBundleName</key>\s*<string>[^<]*</string>');
+      
+      content = content.replaceAll(regexDisplayName, '<key>CFBundleDisplayName</key>\n\t<string>$name</string>');
+      content = content.replaceAll(regexBundleName, '<key>CFBundleName</key>\n\t<string>$name</string>');
+      await infoPlistFile.writeAsString(content);
+      print("✓ ios/Runner/Info.plist app names updated.");
+    } catch (e) {
+      print("⚠️ Failed to manually update Info.plist: $e");
+    }
+  }
+
   final renameNameResult = await Process.run('flutter', [
     'pub',
     'run',
