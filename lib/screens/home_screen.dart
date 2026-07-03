@@ -51,6 +51,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 setState(() {
                   _isLoading = false;
                 });
+                try {
+                  final double statusBarHeight = MediaQuery.of(context).padding.top;
+                  final double totalPadding = kToolbarHeight + statusBarHeight;
+                  _controller.runJavaScript('''
+                    if (document.body) {
+                      document.body.style.paddingTop = '${totalPadding}px';
+                    }
+                  ''');
+                } catch (e) {
+                  debugPrint("Failed to inject padding: $e");
+                }
               },
               onWebResourceError: (WebResourceError error) {},
               onNavigationRequest: (NavigationRequest request) {
@@ -289,10 +300,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Stack(
       children: [
-        // WebView occupying the screen, bounds change smoothly
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 200),
-          top: _showAppBar ? appBarHeight : 0,
+        // WebView occupying the screen statically (NEVER resizes to prevent lag)
+        Positioned(
+          top: 0,
           left: 0,
           right: 0,
           bottom: 0,
@@ -313,11 +323,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         
-        // Dynamic loading progress indicator
+        // Dynamic loading progress indicator (stays just below status bar or at the top)
         if (_isLoading)
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 200),
-            top: _showAppBar ? appBarHeight : 0,
+          Positioned(
+            top: statusBarHeight,
             left: 0,
             right: 0,
             child: LinearProgressIndicator(
